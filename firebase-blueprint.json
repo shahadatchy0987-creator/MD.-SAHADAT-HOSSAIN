@@ -1,0 +1,307 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile with workspace membership, role, and language preference.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "EMPLOYEE"] },
+        "preferredLanguage": { "type": "string", "enum": ["en", "bn"] },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Client writes FieldValue.serverTimestamp()" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Client writes FieldValue.serverTimestamp()" }
+      },
+      "required": ["userId", "email", "displayName", "workspaceId", "role", "preferredLanguage", "createdAt", "updatedAt"]
+    },
+    "TransactionRecord": {
+      "title": "TransactionRecord",
+      "description": "Financial transaction for Income, Expense, or Cash/Bank Transfer.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "type": { "type": "string", "enum": ["INCOME", "EXPENSE", "TRANSFER"] },
+        "category": { "type": "string" },
+        "partyName": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "BANK", "MOBILE_BANKING"] },
+        "toPaymentMethod": { "type": "string", "enum": ["CASH", "BANK", "MOBILE_BANKING"] },
+        "referenceNumber": { "type": "string" },
+        "description": { "type": "string" },
+        "dateMillis": { "type": "integer" },
+        "dateFormatted": { "type": "string" },
+        "sourceType": { "type": "string" },
+        "linkedBillId": { "type": "string" },
+        "linkedPaymentId": { "type": "string" },
+        "createdByUid": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Client writes FieldValue.serverTimestamp()" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Client writes FieldValue.serverTimestamp()" }
+      },
+      "required": ["type", "category", "partyName", "amount", "paymentMethod", "dateMillis", "dateFormatted", "createdByUid", "createdByName", "createdAt", "updatedAt"]
+    },
+    "AccountBalanceConfig": {
+      "title": "AccountBalanceConfig",
+      "description": "Opening balance configuration for Cash, Bank, or Mobile Banking.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "method": { "type": "string", "enum": ["CASH", "BANK", "MOBILE_BANKING"] },
+        "openingBalance": { "type": "number" },
+        "accountLabel": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["method", "openingBalance", "accountLabel", "createdAt", "updatedAt"]
+    },
+    "SearchHistoryTerm": {
+      "title": "SearchHistoryTerm",
+      "description": "User search query frequency and recency tracking for transaction logs.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "term": { "type": "string" },
+        "searchCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastSearchedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "term", "searchCount", "createdAt", "lastSearchedAt"]
+    },
+    "Workspace": {
+      "title": "Workspace",
+      "description": "ISP Business accounting workspace metadata and authorized member UIDs.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "WorkspaceMember": {
+      "title": "WorkspaceMember",
+      "description": "Workspace member RBAC role assignment.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "EMPLOYEE"] },
+        "workspaceId": { "type": "string" },
+        "workspaceMemberUids": { "type": "array" },
+        "inviteDocId": { "type": "string" },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "workspaceId", "workspaceMemberUids", "joinedAt", "updatedAt"]
+    },
+    "TeamInvite": {
+      "title": "TeamInvite",
+      "description": "Email invitation for an employee or admin to join a workspace.",
+      "type": "object",
+      "properties": {
+        "inviteEmail": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "workspaceName": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "EMPLOYEE"] },
+        "invitedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["inviteEmail", "workspaceId", "workspaceName", "role", "invitedByUid", "createdAt"]
+    },
+    "IspCustomer": {
+      "title": "IspCustomer",
+      "description": "ISP broadband subscriber profile.",
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "customerCode": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "packageName": { "type": "string" },
+        "monthlyFee": { "type": "number" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["workspaceId", "memberUids", "customerCode", "name", "monthlyFee", "active", "createdAt", "updatedAt"]
+    },
+    "CustomerBill": {
+      "title": "CustomerBill",
+      "description": "Monthly ISP customer billing ledger with partial payment tracking.",
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "customerDocId": { "type": "string" },
+        "customerCode": { "type": "string" },
+        "customerName": { "type": "string" },
+        "billingMonth": { "type": "string" },
+        "monthlyBillAmount": { "type": "number" },
+        "previousDue": { "type": "number" },
+        "totalPayable": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "remainingDue": { "type": "number" },
+        "status": { "type": "string", "enum": ["UNPAID", "PARTIAL", "PAID"] },
+        "lastPaymentDate": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["workspaceId", "memberUids", "customerDocId", "customerCode", "customerName", "billingMonth", "monthlyBillAmount", "previousDue", "totalPayable", "paidAmount", "remainingDue", "status", "createdAt", "updatedAt"]
+    },
+    "BillPayment": {
+      "title": "BillPayment",
+      "description": "Individual customer payment installment for a billing month.",
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "billId": { "type": "string" },
+        "customerDocId": { "type": "string" },
+        "customerCode": { "type": "string" },
+        "customerName": { "type": "string" },
+        "billingMonth": { "type": "string" },
+        "paidAmount": { "type": "number" },
+        "paymentDateMillis": { "type": "integer" },
+        "paymentDateFormatted": { "type": "string" },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "BANK", "MOBILE_BANKING"] },
+        "collectedByEmployeeId": { "type": "string" },
+        "collectedByEmployeeName": { "type": "string" },
+        "referenceNumber": { "type": "string" },
+        "note": { "type": "string" },
+        "createdByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["workspaceId", "memberUids", "billId", "customerDocId", "customerCode", "customerName", "billingMonth", "paidAmount", "paymentDateMillis", "paymentDateFormatted", "paymentMethod", "createdByUid", "createdAt"]
+    },
+    "OfficeEmployee": {
+      "title": "OfficeEmployee",
+      "description": "Office team member who collects customer bills and deposits cash to office.",
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "designation": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["workspaceId", "memberUids", "name", "active", "createdAt", "updatedAt"]
+    },
+    "EmployeeLedgerEntry": {
+      "title": "EmployeeLedgerEntry",
+      "description": "Employee customer collection or office deposit transaction.",
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "entryType": { "type": "string", "enum": ["COLLECTION", "DEPOSIT"] },
+        "amount": { "type": "number" },
+        "dateMillis": { "type": "integer" },
+        "dateFormatted": { "type": "string" },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "BANK", "MOBILE_BANKING"] },
+        "referenceNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "note": { "type": "string" },
+        "createdByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["workspaceId", "memberUids", "employeeId", "employeeName", "entryType", "amount", "dateMillis", "dateFormatted", "paymentMethod", "createdByUid", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable audit trail for transaction creations, edits, and deletions.",
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "entityType": { "type": "string" },
+        "entityId": { "type": "string" },
+        "action": { "type": "string", "enum": ["CREATE", "UPDATE", "DELETE"] },
+        "summary": { "type": "string" },
+        "previousValues": { "type": "string" },
+        "newValues": { "type": "string" },
+        "performedByUid": { "type": "string" },
+        "performedByName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["workspaceId", "memberUids", "entityType", "entityId", "action", "summary", "performedByUid", "performedByName", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile and workspace binding."
+    },
+    "/users/{userId}/personal_transactions/{txId}": {
+      "schema": { "$ref": "#/entities/TransactionRecord" },
+      "description": "Strictly private personal income, expense, and transfer entries."
+    },
+    "/users/{userId}/personal_accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/AccountBalanceConfig" },
+      "description": "Private personal Cash/Bank/Mobile Banking opening balances."
+    },
+    "/users/{userId}/search_history/{termId}": {
+      "schema": { "$ref": "#/entities/SearchHistoryTerm" },
+      "description": "User-scoped transaction log search history ranked by frequency."
+    },
+    "/team_invites/{inviteId}": {
+      "schema": { "$ref": "#/entities/TeamInvite" },
+      "description": "Team invitations for employees and admins."
+    },
+    "/workspaces/{workspaceId}": {
+      "schema": { "$ref": "#/entities/Workspace" },
+      "description": "ISP Business workspace metadata."
+    },
+    "/workspaces/{workspaceId}/members/{memberUid}": {
+      "schema": { "$ref": "#/entities/WorkspaceMember" },
+      "description": "Workspace member roles (ADMIN or EMPLOYEE)."
+    },
+    "/workspaces/{workspaceId}/isp_transactions/{txId}": {
+      "schema": { "$ref": "#/entities/TransactionRecord" },
+      "description": "ISP Business income, expense, and transfer entries."
+    },
+    "/workspaces/{workspaceId}/isp_accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/AccountBalanceConfig" },
+      "description": "ISP Business Cash/Bank/Mobile Banking opening balances."
+    },
+    "/workspaces/{workspaceId}/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/IspCustomer" },
+      "description": "ISP broadband customers."
+    },
+    "/workspaces/{workspaceId}/customer_bills/{billId}": {
+      "schema": { "$ref": "#/entities/CustomerBill" },
+      "description": "Monthly ISP customer bills and due balances."
+    },
+    "/workspaces/{workspaceId}/bill_payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/BillPayment" },
+      "description": "Partial and multiple customer payment receipts."
+    },
+    "/workspaces/{workspaceId}/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/OfficeEmployee" },
+      "description": "Office team members."
+    },
+    "/workspaces/{workspaceId}/employee_entries/{entryId}": {
+      "schema": { "$ref": "#/entities/EmployeeLedgerEntry" },
+      "description": "Employee customer collections and office deposits."
+    },
+    "/workspaces/{workspaceId}/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable financial audit logs."
+    }
+  }
+}

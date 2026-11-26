@@ -1,0 +1,8 @@
+{
+  "name": "Remix Plusnet Accounts",
+  "description": "Personal and ISP business accounting management application with customer billing, team collection tracking, reports, and Firebase cloud sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

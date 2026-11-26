@@ -1,0 +1,627 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidText(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptText(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isValidTs(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidNumber(val) {
+      return (val is int || val is float) && val >= 0;
+    }
+
+    function isPositiveNumber(val) {
+      return (val is int || val is float) && val > 0;
+    }
+
+    function isBoundedUidList(list) {
+      return list is list && list.size() >= 1 && list.size() <= 25 && (list.size() == 0 || list[0] is string);
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+             ('email' in request.auth.token) &&
+             ('email_verified' in request.auth.token) &&
+             request.auth.token.email == 'shahadatchy7890@gmail.com' &&
+             request.auth.token.email_verified == true;
+    }
+
+    function isWorkspaceMember(workspaceId) {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+    }
+
+    function isWorkspaceAdmin(workspaceId) {
+      return isSignedIn() && (
+        isBootstrappedAdmin() ||
+        (exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.role == 'ADMIN')
+      );
+    }
+
+    // --- Entity Validation Helpers ---
+    function isValidUserProfile(data) {
+      return isValidText(data.userId, 1, 128) &&
+             isValidText(data.email, 3, 200) &&
+             isValidText(data.displayName, 1, 120) &&
+             isValidId(data.workspaceId) &&
+             (data.role in ['ADMIN', 'EMPLOYEE']) &&
+             (data.preferredLanguage in ['en', 'bn']) &&
+             isValidTs(data.createdAt) &&
+             isValidTs(data.updatedAt);
+    }
+
+    function isValidTransaction(data, isIsp) {
+      return (data.type in ['INCOME', 'EXPENSE', 'TRANSFER']) &&
+             isValidText(data.category, 1, 80) &&
+             isValidText(data.partyName, 1, 160) &&
+             isPositiveNumber(data.amount) &&
+             (data.paymentMethod in ['CASH', 'BANK', 'MOBILE_BANKING']) &&
+             (!( 'toPaymentMethod' in data ) || (data.toPaymentMethod in ['CASH', 'BANK', 'MOBILE_BANKING'])) &&
+             isValidOptText(data, 'referenceNumber', 80) &&
+             isValidOptText(data, 'description', 500) &&
+             (data.dateMillis is int && data.dateMillis > 0) &&
+             isValidText(data.dateFormatted, 10, 10) &&
+             isValidOptText(data, 'sourceType', 40) &&
+             isValidOptText(data, 'linkedBillId', 128) &&
+             isValidOptText(data, 'linkedPaymentId', 128) &&
+             isValidText(data.createdByUid, 1, 128) &&
+             isValidText(data.createdByName, 1, 120) &&
+             isValidTs(data.createdAt) &&
+             isValidTs(data.updatedAt) &&
+             (!isIsp || (isValidId(data.workspaceId) && isBoundedUidList(data.memberUids))) &&
+             (isIsp || isValidText(data.userId, 1, 128));
+    }
+
+    function isValidAccountConfig(data, isIsp) {
+      return (data.method in ['CASH', 'BANK', 'MOBILE_BANKING']) &&
+             (data.openingBalance is int || data.openingBalance is float) &&
+             isValidText(data.accountLabel, 1, 80) &&
+             isValidTs(data.createdAt) &&
+             isValidTs(data.updatedAt) &&
+             (!isIsp || (isValidId(data.workspaceId) && isBoundedUidList(data.memberUids))) &&
+             (isIsp || isValidText(data.userId, 1, 128));
+    }
+
+    function isValidSearchHistoryTerm(data) {
+      return isValidText(data.userId, 1, 128) &&
+             isValidText(data.term, 1, 100) &&
+             (data.searchCount is int && data.searchCount >= 1) &&
+             isValidTs(data.createdAt) &&
+             isValidTs(data.lastSearchedAt);
+    }
+
+    function isValidWorkspace(data) {
+      return isValidText(data.name, 1, 120) &&
+             isValidText(data.ownerUid, 1, 128) &&
+             isBoundedUidList(data.memberUids) &&
+             isValidTs(data.createdAt) &&
+             isValidTs(data.updatedAt);
+    }
+
+    function isValidWorkspaceMember(data) {
+      return isValidText(data.uid, 1, 128) &&
+             isValidText(data.email, 3, 200) &&
+             isValidText(data.displayName, 1, 120) &&
+             (data.role in ['ADMIN', 'EMPLOYEE']) &&
+             isValidId(data.workspaceId) &&
+             isBoundedUidList(data.workspaceMemberUids) &&
+             isValidOptText(data, 'inviteDocId', 128) &&
+             isValidTs(data.joinedAt) &&
+             isValidTs(data.updatedAt);
+    }
+
+    function isValidTeamInvite(data) {
+      return isValidText(data.inviteEmail, 3, 200) &&
+             isValidId(data.workspaceId) &&
+             isValidText(data.workspaceName, 1, 120) &&
+             (data.role in ['ADMIN', 'EMPLOYEE']) &&
+             isValidText(data.invitedByUid, 1, 128) &&
+             isValidTs(data.createdAt);
+    }
+
+    function isValidIspCustomer(data) {
+      return isValidId(data.workspaceId) &&
+             isBoundedUidList(data.memberUids) &&
+             isValidText(data.customerCode, 1, 60) &&
+             isValidText(data.name, 1, 140) &&
+             isValidOptText(data, 'phone', 40) &&
+             isValidOptText(data, 'address', 240) &&
+             isValidOptText(data, 'packageName', 100) &&
+             isValidNumber(data.monthlyFee) &&
+             (data.active is bool) &&
+             isValidTs(data.createdAt) &&
+             isValidTs(data.updatedAt);
+    }
+
+    function isValidCustomerBill(data) {
+      return isValidId(data.workspaceId) &&
+             isBoundedUidList(data.memberUids) &&
+             isValidId(data.customerDocId) &&
+             isValidText(data.customerCode, 1, 60) &&
+             isValidText(data.customerName, 1, 140) &&
+             isValidText(data.billingMonth, 4, 20) &&
+             isValidNumber(data.monthlyBillAmount) &&
+             isValidNumber(data.previousDue) &&
+             isValidNumber(data.totalPayable) &&
+             isValidNumber(data.paidAmount) &&
+             isValidNumber(data.remainingDue) &&
+             (data.status in ['UNPAID', 'PARTIAL', 'PAID']) &&
+             isValidOptText(data, 'lastPaymentDate', 20) &&
+             isValidTs(data.createdAt) &&
+             isValidTs(data.updatedAt);
+    }
+
+    function isValidBillPayment(data) {
+      return isValidId(data.workspaceId) &&
+             isBoundedUidList(data.memberUids) &&
+             isValidId(data.billId) &&
+             isValidId(data.customerDocId) &&
+             isValidText(data.customerCode, 1, 60) &&
+             isValidText(data.customerName, 1, 140) &&
+             isValidText(data.billingMonth, 4, 20) &&
+             isPositiveNumber(data.paidAmount) &&
+             (data.paymentDateMillis is int && data.paymentDateMillis > 0) &&
+             isValidText(data.paymentDateFormatted, 10, 10) &&
+             (data.paymentMethod in ['CASH', 'BANK', 'MOBILE_BANKING']) &&
+             isValidOptText(data, 'collectedByEmployeeId', 128) &&
+             isValidOptText(data, 'collectedByEmployeeName', 120) &&
+             isValidOptText(data, 'referenceNumber', 80) &&
+             isValidOptText(data, 'note', 300) &&
+             isValidText(data.createdByUid, 1, 128) &&
+             isValidTs(data.createdAt);
+    }
+
+    function isValidOfficeEmployee(data) {
+      return isValidId(data.workspaceId) &&
+             isBoundedUidList(data.memberUids) &&
+             isValidText(data.name, 1, 120) &&
+             isValidOptText(data, 'phone', 40) &&
+             isValidOptText(data, 'designation', 80) &&
+             (data.active is bool) &&
+             isValidTs(data.createdAt) &&
+             isValidTs(data.updatedAt);
+    }
+
+    function isValidEmployeeEntry(data) {
+      return isValidId(data.workspaceId) &&
+             isBoundedUidList(data.memberUids) &&
+             isValidId(data.employeeId) &&
+             isValidText(data.employeeName, 1, 120) &&
+             (data.entryType in ['COLLECTION', 'DEPOSIT']) &&
+             isPositiveNumber(data.amount) &&
+             (data.dateMillis is int && data.dateMillis > 0) &&
+             isValidText(data.dateFormatted, 10, 10) &&
+             (data.paymentMethod in ['CASH', 'BANK', 'MOBILE_BANKING']) &&
+             isValidOptText(data, 'referenceNumber', 80) &&
+             isValidOptText(data, 'customerName', 140) &&
+             isValidOptText(data, 'note', 300) &&
+             isValidText(data.createdByUid, 1, 128) &&
+             isValidTs(data.createdAt);
+    }
+
+    function isValidAuditLog(data) {
+      return isValidId(data.workspaceId) &&
+             isBoundedUidList(data.memberUids) &&
+             isValidText(data.entityType, 1, 60) &&
+             isValidText(data.entityId, 1, 128) &&
+             (data.action in ['CREATE', 'UPDATE', 'DELETE']) &&
+             isValidText(data.summary, 1, 400) &&
+             isValidOptText(data, 'previousValues', 1000) &&
+             isValidOptText(data, 'newValues', 1000) &&
+             isValidText(data.performedByUid, 1, 128) &&
+             isValidText(data.performedByName, 1, 120) &&
+             isValidTs(data.createdAt);
+    }
+
+    // --- 1. User Profile & Strictly Private Personal Accounts ---
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'email', 'displayName', 'workspaceId', 'role', 'preferredLanguage', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'email', 'displayName', 'workspaceId', 'role', 'preferredLanguage', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming()) &&
+                       (
+                         (incoming().workspaceId == ('ws_' + request.auth.uid) && incoming().role == 'ADMIN') ||
+                         isBootstrappedAdmin() ||
+                         incoming().role == 'EMPLOYEE'
+                       );
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().email == existing().email &&
+                       incoming().workspaceId == existing().workspaceId &&
+                       incoming().role == existing().role &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'preferredLanguage', 'updatedAt']);
+
+      allow delete: if false;
+
+      match /personal_transactions/{txId} {
+        allow get: if isOwner(userId) && isValidId(txId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(txId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().createdByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'type', 'category', 'partyName', 'amount', 'paymentMethod', 'dateMillis', 'dateFormatted', 'createdByUid', 'createdByName', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'type', 'category', 'partyName', 'amount', 'paymentMethod', 'toPaymentMethod', 'referenceNumber', 'description', 'dateMillis', 'dateFormatted', 'sourceType', 'linkedBillId', 'linkedPaymentId', 'createdByUid', 'createdByName', 'createdAt', 'updatedAt']) &&
+                         isValidTransaction(incoming(), false);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(txId) &&
+                         isValidTransaction(incoming(), false) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['type', 'category', 'partyName', 'amount', 'paymentMethod', 'toPaymentMethod', 'referenceNumber', 'description', 'dateMillis', 'dateFormatted', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(txId);
+      }
+
+      match /personal_accounts/{accountId} {
+        allow get: if isOwner(userId) && isValidId(accountId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(accountId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'method', 'openingBalance', 'accountLabel', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'method', 'openingBalance', 'accountLabel', 'createdAt', 'updatedAt']) &&
+                         isValidAccountConfig(incoming(), false);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(accountId) &&
+                         isValidAccountConfig(incoming(), false) &&
+                         incoming().userId == existing().userId &&
+                         incoming().method == existing().method &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['openingBalance', 'accountLabel', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(accountId);
+      }
+
+      match /search_history/{termId} {
+        allow get: if isOwner(userId) && isValidId(termId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(termId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'term', 'searchCount', 'createdAt', 'lastSearchedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'term', 'searchCount', 'createdAt', 'lastSearchedAt']) &&
+                         isValidSearchHistoryTerm(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(termId) &&
+                         isValidSearchHistoryTerm(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().term == existing().term &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['searchCount', 'lastSearchedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(termId);
+      }
+    }
+
+    // --- 2. Team Invites ---
+    match /team_invites/{inviteId} {
+      allow get: if isSignedIn() && isValidId(inviteId) && (
+        existing().invitedByUid == request.auth.uid ||
+        (request.auth.token.email_verified == true && existing().inviteEmail == request.auth.token.email)
+      );
+      allow list: if isSignedIn() && (
+        resource.data.invitedByUid == request.auth.uid ||
+        (request.auth.token.email_verified == true && resource.data.inviteEmail == request.auth.token.email)
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(inviteId) &&
+                       incoming().invitedByUid == request.auth.uid &&
+                       incoming().keys().hasAll(['inviteEmail', 'workspaceId', 'workspaceName', 'role', 'invitedByUid', 'createdAt']) &&
+                       incoming().keys().hasOnly(['inviteEmail', 'workspaceId', 'workspaceName', 'role', 'invitedByUid', 'createdAt']) &&
+                       isValidTeamInvite(incoming()) &&
+                       isWorkspaceAdmin(incoming().workspaceId);
+
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(inviteId) && (
+        existing().invitedByUid == request.auth.uid ||
+        (request.auth.token.email_verified == true && existing().inviteEmail == request.auth.token.email)
+      );
+    }
+
+    // --- 3. ISP Business Workspaces & RBAC ---
+    match /workspaces/{workspaceId} {
+      allow get: if isSignedIn() && isValidId(workspaceId) && (request.auth.uid in existing().memberUids || isBootstrappedAdmin());
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isSignedIn() &&
+                       isValidId(workspaceId) &&
+                       incoming().ownerUid == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().keys().hasAll(['name', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['name', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                       isValidWorkspace(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(workspaceId) &&
+                       isValidWorkspace(incoming()) &&
+                       incoming().ownerUid == existing().ownerUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         isWorkspaceAdmin(workspaceId) ||
+                         (
+                           // Invited user joining workspace adds only their own UID
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
+                           request.auth.uid in incoming().memberUids
+                         )
+                       );
+
+      allow delete: if false;
+
+      match /members/{memberUid} {
+        allow get: if isSignedIn() && isValidId(memberUid) && (request.auth.uid == memberUid || isWorkspaceMember(workspaceId));
+        allow list: if isSignedIn() && request.auth.uid in resource.data.workspaceMemberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(memberUid) &&
+                         incoming().workspaceId == workspaceId &&
+                         incoming().keys().hasAll(['uid', 'email', 'displayName', 'role', 'workspaceId', 'workspaceMemberUids', 'joinedAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['uid', 'email', 'displayName', 'role', 'workspaceId', 'workspaceMemberUids', 'inviteDocId', 'joinedAt', 'updatedAt']) &&
+                         isValidWorkspaceMember(incoming()) &&
+                         (
+                           (request.auth.uid == memberUid && workspaceId == ('ws_' + request.auth.uid) && incoming().role == 'ADMIN') ||
+                           isWorkspaceAdmin(workspaceId) ||
+                           (
+                             request.auth.uid == memberUid &&
+                             request.auth.token.email_verified == true &&
+                             ('inviteDocId' in incoming()) &&
+                             isValidId(incoming().inviteDocId) &&
+                             exists(/databases/$(database)/documents/team_invites/$(incoming().inviteDocId)) &&
+                             get(/databases/$(database)/documents/team_invites/$(incoming().inviteDocId)).data.inviteEmail == request.auth.token.email &&
+                             get(/databases/$(database)/documents/team_invites/$(incoming().inviteDocId)).data.workspaceId == workspaceId &&
+                             get(/databases/$(database)/documents/team_invites/$(incoming().inviteDocId)).data.role == incoming().role
+                           )
+                         );
+
+        allow update: if isSignedIn() &&
+                         isValidId(memberUid) &&
+                         isValidWorkspaceMember(incoming()) &&
+                         isWorkspaceAdmin(workspaceId) &&
+                         incoming().uid == existing().uid &&
+                         incoming().email == existing().email &&
+                         incoming().workspaceId == existing().workspaceId &&
+                         incoming().joinedAt == existing().joinedAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['role', 'displayName', 'workspaceMemberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(memberUid) && isWorkspaceAdmin(workspaceId) && memberUid != request.auth.uid;
+      }
+
+      match /isp_transactions/{txId} {
+        allow get: if isSignedIn() && isValidId(txId) && isWorkspaceMember(workspaceId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(txId) &&
+                         isWorkspaceMember(workspaceId) &&
+                         incoming().workspaceId == workspaceId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['workspaceId', 'memberUids', 'type', 'category', 'partyName', 'amount', 'paymentMethod', 'dateMillis', 'dateFormatted', 'createdByUid', 'createdByName', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['workspaceId', 'memberUids', 'type', 'category', 'partyName', 'amount', 'paymentMethod', 'toPaymentMethod', 'referenceNumber', 'description', 'dateMillis', 'dateFormatted', 'sourceType', 'linkedBillId', 'linkedPaymentId', 'createdByUid', 'createdByName', 'createdAt', 'updatedAt']) &&
+                         isValidTransaction(incoming(), true) &&
+                         (incoming().type != 'TRANSFER' || isWorkspaceAdmin(workspaceId));
+
+        allow update: if isSignedIn() &&
+                         isValidId(txId) &&
+                         isWorkspaceMember(workspaceId) &&
+                         isValidTransaction(incoming(), true) &&
+                         incoming().workspaceId == existing().workspaceId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         (isWorkspaceAdmin(workspaceId) || existing().createdByUid == request.auth.uid) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['type', 'category', 'partyName', 'amount', 'paymentMethod', 'toPaymentMethod', 'referenceNumber', 'description', 'dateMillis', 'dateFormatted', 'memberUids', 'updatedAt']);
+
+        // ONLY Admin can delete financial transactions
+        allow delete: if isSignedIn() && isValidId(txId) && isWorkspaceAdmin(workspaceId);
+      }
+
+      match /isp_accounts/{accountId} {
+        allow get: if isSignedIn() && isValidId(accountId) && isWorkspaceMember(workspaceId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(accountId) &&
+                         isWorkspaceAdmin(workspaceId) &&
+                         incoming().workspaceId == workspaceId &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['workspaceId', 'memberUids', 'method', 'openingBalance', 'accountLabel', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['workspaceId', 'memberUids', 'method', 'openingBalance', 'accountLabel', 'createdAt', 'updatedAt']) &&
+                         isValidAccountConfig(incoming(), true);
+
+        allow update: if isSignedIn() &&
+                         isValidId(accountId) &&
+                         isWorkspaceAdmin(workspaceId) &&
+                         isValidAccountConfig(incoming(), true) &&
+                         incoming().workspaceId == existing().workspaceId &&
+                         incoming().method == existing().method &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['openingBalance', 'accountLabel', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(accountId) && isWorkspaceAdmin(workspaceId);
+      }
+
+      match /customers/{customerId} {
+        allow get: if isSignedIn() && isValidId(customerId) && isWorkspaceMember(workspaceId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(customerId) &&
+                         isWorkspaceMember(workspaceId) &&
+                         incoming().workspaceId == workspaceId &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['workspaceId', 'memberUids', 'customerCode', 'name', 'monthlyFee', 'active', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['workspaceId', 'memberUids', 'customerCode', 'name', 'phone', 'address', 'packageName', 'monthlyFee', 'active', 'createdAt', 'updatedAt']) &&
+                         isValidIspCustomer(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidId(customerId) &&
+                         isWorkspaceMember(workspaceId) &&
+                         isValidIspCustomer(incoming()) &&
+                         incoming().workspaceId == existing().workspaceId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['customerCode', 'name', 'phone', 'address', 'packageName', 'monthlyFee', 'active', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(customerId) && isWorkspaceAdmin(workspaceId);
+      }
+
+      match /customer_bills/{billId} {
+        allow get: if isSignedIn() && isValidId(billId) && isWorkspaceMember(workspaceId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(billId) &&
+                         isWorkspaceMember(workspaceId) &&
+                         incoming().workspaceId == workspaceId &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['workspaceId', 'memberUids', 'customerDocId', 'customerCode', 'customerName', 'billingMonth', 'monthlyBillAmount', 'previousDue', 'totalPayable', 'paidAmount', 'remainingDue', 'status', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['workspaceId', 'memberUids', 'customerDocId', 'customerCode', 'customerName', 'billingMonth', 'monthlyBillAmount', 'previousDue', 'totalPayable', 'paidAmount', 'remainingDue', 'status', 'lastPaymentDate', 'createdAt', 'updatedAt']) &&
+                         isValidCustomerBill(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidId(billId) &&
+                         isWorkspaceMember(workspaceId) &&
+                         isValidCustomerBill(incoming()) &&
+                         incoming().workspaceId == existing().workspaceId &&
+                         incoming().customerDocId == existing().customerDocId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['monthlyBillAmount', 'previousDue', 'totalPayable', 'paidAmount', 'remainingDue', 'status', 'lastPaymentDate', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(billId) && isWorkspaceAdmin(workspaceId);
+      }
+
+      match /bill_payments/{paymentId} {
+        allow get: if isSignedIn() && isValidId(paymentId) && isWorkspaceMember(workspaceId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(paymentId) &&
+                         isWorkspaceMember(workspaceId) &&
+                         incoming().workspaceId == workspaceId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['workspaceId', 'memberUids', 'billId', 'customerDocId', 'customerCode', 'customerName', 'billingMonth', 'paidAmount', 'paymentDateMillis', 'paymentDateFormatted', 'paymentMethod', 'createdByUid', 'createdAt']) &&
+                         incoming().keys().hasOnly(['workspaceId', 'memberUids', 'billId', 'customerDocId', 'customerCode', 'customerName', 'billingMonth', 'paidAmount', 'paymentDateMillis', 'paymentDateFormatted', 'paymentMethod', 'collectedByEmployeeId', 'collectedByEmployeeName', 'referenceNumber', 'note', 'createdByUid', 'createdAt']) &&
+                         isValidBillPayment(incoming());
+
+        allow update: if false;
+        allow delete: if isSignedIn() && isValidId(paymentId) && isWorkspaceAdmin(workspaceId);
+      }
+
+      match /employees/{employeeId} {
+        allow get: if isSignedIn() && isValidId(employeeId) && isWorkspaceMember(workspaceId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(employeeId) &&
+                         isWorkspaceAdmin(workspaceId) &&
+                         incoming().workspaceId == workspaceId &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['workspaceId', 'memberUids', 'name', 'active', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['workspaceId', 'memberUids', 'name', 'phone', 'designation', 'active', 'createdAt', 'updatedAt']) &&
+                         isValidOfficeEmployee(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidId(employeeId) &&
+                         isWorkspaceAdmin(workspaceId) &&
+                         isValidOfficeEmployee(incoming()) &&
+                         incoming().workspaceId == existing().workspaceId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'designation', 'active', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(employeeId) && isWorkspaceAdmin(workspaceId);
+      }
+
+      match /employee_entries/{entryId} {
+        allow get: if isSignedIn() && isValidId(entryId) && isWorkspaceMember(workspaceId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(entryId) &&
+                         isWorkspaceMember(workspaceId) &&
+                         incoming().workspaceId == workspaceId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['workspaceId', 'memberUids', 'employeeId', 'employeeName', 'entryType', 'amount', 'dateMillis', 'dateFormatted', 'paymentMethod', 'createdByUid', 'createdAt']) &&
+                         incoming().keys().hasOnly(['workspaceId', 'memberUids', 'employeeId', 'employeeName', 'entryType', 'amount', 'dateMillis', 'dateFormatted', 'paymentMethod', 'referenceNumber', 'customerName', 'note', 'createdByUid', 'createdAt']) &&
+                         isValidEmployeeEntry(incoming());
+
+        allow update: if isSignedIn() && isValidId(entryId) && isWorkspaceAdmin(workspaceId) &&
+                         isValidEmployeeEntry(incoming()) &&
+                         incoming().workspaceId == existing().workspaceId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['amount', 'dateMillis', 'dateFormatted', 'paymentMethod', 'referenceNumber', 'customerName', 'note', 'memberUids']);
+
+        allow delete: if isSignedIn() && isValidId(entryId) && isWorkspaceAdmin(workspaceId);
+      }
+
+      match /audit_logs/{logId} {
+        allow get: if isSignedIn() && isValidId(logId) && isWorkspaceMember(workspaceId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(logId) &&
+                         isWorkspaceMember(workspaceId) &&
+                         incoming().workspaceId == workspaceId &&
+                         incoming().performedByUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['workspaceId', 'memberUids', 'entityType', 'entityId', 'action', 'summary', 'performedByUid', 'performedByName', 'createdAt']) &&
+                         incoming().keys().hasOnly(['workspaceId', 'memberUids', 'entityType', 'entityId', 'action', 'summary', 'previousValues', 'newValues', 'performedByUid', 'performedByName', 'createdAt']) &&
+                         isValidAuditLog(incoming());
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}
